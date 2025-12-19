@@ -29,6 +29,7 @@ The recommended setup uses a virtual environment:
 python3.12 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+```
 
 The directory daten and all provided data files must be located in the working directory from which the code is executed.
 
@@ -36,6 +37,7 @@ The directory daten and all provided data files must be located in the working d
 
 ## Execution
 
+```bash
 # Robust optimization
 python3.12 run_funktionen.py
 
@@ -47,6 +49,7 @@ python3.12 run_funktionen.py -f --fix_lower <number1> --fix_upper <number2>
 
 # Show all available options
 python3.12 run_funktionen.py -h
+```
 
 ---
 

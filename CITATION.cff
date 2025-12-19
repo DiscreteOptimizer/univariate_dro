@@ -1,0 +1,32 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite the associated article."
+title: "Safe Mixed-Integer Approximation for Non-Convex Distributional Robustness with Univariate Indicator Functions"
+authors:
+  - family-names: Dienstbier
+    given-names: Jana
+  - family-names: Liers
+    given-names: Frauke
+  - family-names: Rolfes
+    given-names: Jan
+  - family-names: Rösel
+    given-names: Florian
+date-released: 2025-12-19
+version: 0.1.0
+license: MIT
+repository-code: "https://github.com/DiscreteOptimizer/univariate_dro"
+preferred-citation:
+  type: article
+  authors:
+    - family-names: Dienstbier
+      given-names: Jana
+    - family-names: Liers
+      given-names: Frauke
+    - family-names: Rolfes
+      given-names: Jan
+    - family-names: Rösel
+      given-names: Florian
+  title: "Safe Mixed-Integer Approximation for Non-Convex Distributional Robustness with Univariate Indicator Functions"
+  journal: "European Journal of Operational Research"
+  year: 2025
+  status: submitted
+

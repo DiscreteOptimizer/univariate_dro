@@ -55,7 +55,7 @@ def run(params: Params):
     if params.reinheit > purity:
         print(f"[FAILED] Best purity reached: Purity {purity:.4f} < Target {params.reinheit:.4f}.")
     else:
-        print(f"[SUCCESS] Target purity reached: Purity {purity:.4f} >= Target {params.reinheit:.4f}.")
+        print(f"[SUCCESS] Target (nominal) purity reached: Purity {purity:.4f} >= Target {params.reinheit:.4f}.")
 
     # generate plot
     plotter.plot(data, opt["optimal_frac"], params)
@@ -78,7 +78,7 @@ def main():
                         help="Fix lower fract bound. Default 299.")
     parser.add_argument("--fix_upper", type=int, default=653,
                         help="Fix upper fract bound. Default 653.")
-    parser.add_argument("--sample", type=str, default='medium',
+    parser.add_argument("--sample", type=str, default='long',
                         help="Sample. Default 'medium'.")
     parser.add_argument("-f", "--fix", action="store_true",
                         help="Fix solution to fix_lower, fix_upper. Check purity for this solution.")

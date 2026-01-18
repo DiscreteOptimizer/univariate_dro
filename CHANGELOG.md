@@ -20,3 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   *“Safe Mixed-Integer Approximation for Non-Convex Distributional Robustness with Univariate Indicator Functions”*,
   submitted to the *European Journal of Operational Research*.
 
+## [0.1.1] - 2026-01-18
+
+### Minor Fixes
+- Added Long instance set (default), with a minimum time discretization of .0001 instead of .001.
+- Set default (integer and constraint) feasibility tolerances to 1e-09, default MIPGap to 0., and NumericFocus to 3.
+

@@ -27,6 +27,13 @@ def rd4(params: Params):
             'daten/Large_E_max',
         ]
         name="Large_E.txt"
+    elif params.sample == "long":
+        daten = [
+            'daten/Long_E',
+            'daten/Long_E_min',
+            'daten/Long_E_max',
+        ]
+        name="Long_E.txt"
     else:
         assert False, "Invalid value for params.sample."
 

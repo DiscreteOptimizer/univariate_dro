@@ -58,7 +58,7 @@ python3.12 run_funktionen.py -h
 The input data is located in the directory "daten". It is expected that it contains three folders ("nom", "min", "max"), each containing %num-particles many .txt files with lines in the format
 time_point<blank>particle_density
 
-Which folders are used is currently hard-coded and can be steered with the input parameter "sample", which accepts the values "small", "medium", and "large". If you want to solve other instances, you have to adapt the code.
+Which folders are used is currently hard-coded and can be steered with the input parameter "sample", which accepts the values "small", "medium", "large", and "long" (default). If you want to solve other instances, you have to adapt the code.
 
 ---
 

@@ -257,11 +257,11 @@ def solve_dro_model(time_points, matrix_nom_roh, matrix_min_roh, matrix_max_roh,
 
 
     # uncomment for advanced settings
-    #m.params.FeasibilityTol = 1e-9 #default is 1e-6
+    m.params.FeasibilityTol = 1e-9 #default is 1e-6
     #m.params.ScaleFlag = 1
-    #m.setParam("NumericFocus", 3)  # Highest level of numerical precision
-    #m.setParam("IntFeasTol", 1e-9)
-    #m.setParam('MIPGap', 0.05)
+    m.setParam("NumericFocus", 3)  # Highest level of numerical precision
+    m.setParam("IntFeasTol", 1e-9)
+    m.setParam('MIPGap', 0.00)
 
     # optimize
     m.optimize()
@@ -300,9 +300,9 @@ def solve_dro_model(time_points, matrix_nom_roh, matrix_min_roh, matrix_max_roh,
     print(f"Fract interval indexes: ({begin},{end})")
     print(f"Fract interval timesteps: ({time_points[begin]},{time_points[end]})")
     if sum(inner_exprs[i].getValue()/a_s[i] for i in groessen) >= 1e-06:
-        print(f"Purity: {inner_exprs[params.wunschgroesse].getValue()/a_s[params.wunschgroesse]/sum(inner_exprs[i].getValue()/a_s[i] for i in groessen)}")
+        print(f"Worst Case Purity: {inner_exprs[params.wunschgroesse].getValue()/a_s[params.wunschgroesse]/sum(inner_exprs[i].getValue()/a_s[i] for i in groessen)}")
     else:
-        print(f"Purity: 0/0")
+        print(f"Worst Case Purity: 0/0")
 
     # store result
     result = {

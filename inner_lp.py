@@ -114,11 +114,22 @@ class LowerLP(_BaseLP):
         m.update()
 
     # Number of cells by which the interval is shrunk at its left and right end
-    # (a > 0) resp. widened (a < 0). The default (1, 1) is the grid-rounded
-    # indicator 1^c of equations "taudef"/"taudef2", where the widening for
-    # a < 0 is by one more cell on the right than the manuscript prescribes, so
-    # that the resulting value is a lower bound on the value of the manuscript's
-    # linear program as well.
+    # (a > 0) resp. widened (a < 0).
+    #
+    # The default (1, 1) evaluates the continuous underestimator 1^c of
+    # equations "taudef"/"taudef2" at the grid points, in the sharpest way that
+    # is still admissible. For x^-, x^+ on the grid, 1^c must vanish outside
+    # [x^-, x^+] and be one on [tau^-_N, tau^+_N] = [t_{lo+1}, t_{hi-1}] if
+    # a > 0, and it must be one on [x^-, x^+] and vanish outside
+    # [tau^-_N, tau^+_N] = [t_{lo-1}, t_{hi+1}] if a < 0; at the four remaining
+    # grid points it is free in [0, 1]. Taking the value zero there for a > 0 and
+    # one for a < 0 is admissible and yields the largest resp. smallest
+    # admissible objective, i.e. the sharpest valid lower bound on val^s. Note
+    # that this is one cell more than the half-open interval
+    # I(a, x^-, x^+) = [tau^-_N, tau^+_N) of Problem "safe_approx_primal" would
+    # use; the bound remains valid because the safety of the estimate is
+    # established on the dual side, where only the values of 1^c at the grid
+    # points enter (Lemmata "inf_f" and "finite_system").
     #
     # The MIP of model_2.py uses the further weakened indicator of Systems
     # (29)/(30). There, b_tilde equals one on the grid indices [lo, hi-1], hence

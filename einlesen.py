@@ -35,7 +35,15 @@ def rd4(params: Params):
         ]
         name="Long_E.txt"
     else:
-        assert False, "Invalid value for params.sample."
+        # any other value is interpreted as the name of a data directory below
+        # 'daten', with the '_min'/'_max' companions next to it. This is used by
+        # generate_data.py, which writes additional instances of the family of
+        # residence time distributions (added in 0.2.0).
+        base = os.path.join('daten', params.sample)
+        assert os.path.isdir(base), \
+            f"Invalid value for params.sample: neither a keyword nor a directory ({base})."
+        daten = [base, base + '_min', base + '_max']
+        name = params.sample + ".txt"
 
     return daten, name
 

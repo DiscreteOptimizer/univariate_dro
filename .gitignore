@@ -1,5 +1,15 @@
 # exclude output directory
 output/
+results/
+
+# data sets written by generate_data.py; they are reproducible from the shipped
+# data and are therefore not part of the repository
+daten/Gen_*
+daten/Bisect_*
+
+# working links into the manuscript directory, not part of the repository
+MAIN_revised.tex
+agent_instructions_computations.md
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

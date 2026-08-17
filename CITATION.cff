@@ -10,8 +10,8 @@ authors:
     given-names: Jan
   - family-names: Rösel
     given-names: Florian
-date-released: 2025-12-19
-version: 0.1.0
+date-released: 2026-08-17
+version: 0.2.0
 license: MIT
 repository-code: "https://github.com/DiscreteOptimizer/univariate_dro"
 preferred-citation:
@@ -26,7 +26,6 @@ preferred-citation:
     - family-names: Rösel
       given-names: Florian
   title: "Safe Mixed-Integer Approximation for Non-Convex Distributional Robustness with Univariate Indicator Functions"
-  journal: "European Journal of Operational Research"
-  year: 2025
+  journal: "Journal of Global Optimization"
+  year: 2026
   status: submitted
-

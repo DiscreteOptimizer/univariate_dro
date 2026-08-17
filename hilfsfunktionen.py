@@ -57,6 +57,21 @@ def calculate_yieldpurity(data_short, fraktionierungsvektor, params: Params):
     purity = frac_mass[0, params.wunschgroesse] / total_mass
     return purity
 
+# collected mass of the desired species inside the fractionation window,
+# relative to its total mass (nominal density)
+def collected_mass(data_short, fraktionierungsvektor, params: Params):
+    time_points = data_short[0]
+    matrix_nom = np.array(data_short[1])
+
+    idfrac = [i for i, val in enumerate(fraktionierungsvektor) if val == 1]
+    if len(idfrac) < 2:
+        return 0.
+    frac = [time_points[i] for i in idfrac]
+
+    inside = flaeche(frac, matrix_nom[params.wunschgroesse][idfrac])
+    total = flaeche(time_points, matrix_nom[params.wunschgroesse])
+    return inside / total
+
 # aggregate density matrices
 def aggregate_matrix(matrix, aggregation_factor, params: Params):
     new_matrix = []

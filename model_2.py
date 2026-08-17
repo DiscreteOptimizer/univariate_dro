@@ -1,5 +1,5 @@
 # general imports
-import numpy as np
+import json
 import time
 
 # gurobi
@@ -7,78 +7,34 @@ import gurobipy as gp
 
 # auxiliary functions
 import hilfsfunktionen as aux
+# instance pre-processing
+from instanz import baue_instanz, Instanz
 # params
 from params import Params
 
-def solve_dro_model(time_points, matrix_nom_roh, matrix_min_roh, matrix_max_roh, params: Params):
-    # start runtime tracking
-    start = time.time()
 
-    # scaling factors to increase numeric stability
-    factor = 1e06
-    q_factor = 100.
+def build_dro_model(inst: Instanz, params: Params):
+    """Build the MIP (Prob: MIP_onedim) for the instance ``inst``.
 
-    # initialize particle mass vector
-    q0 = np.zeros(len(matrix_nom_roh))
-    # calculate mass of particle i
-    for i in range(len(matrix_nom_roh)):
-        q0[i] = aux.flaeche(time_points, matrix_nom_roh[i])
-
-    # initialize scaled data
-    matrix_nom = np.zeros((len(matrix_nom_roh),len(matrix_nom_roh[0])))
-    matrix_min = np.zeros((len(matrix_nom_roh),len(matrix_nom_roh[0])))
-    matrix_max = np.zeros((len(matrix_nom_roh),len(matrix_nom_roh[0])))
-
-    # scale data...
-    for i, (el1, el2, el3, el4) in enumerate(zip(q0, matrix_nom_roh, matrix_min_roh, matrix_max_roh)):
-        matrix_nom[i] = el2 / el1
-        matrix_min[i] = el3 / el1
-        matrix_max[i] = el4 / el1
-
-    # particle masses
-    for i in range(len(q0)):
-        q0[i] *= q_factor
-
-    # particle indices
-    groessen = list(i for i in range(len(matrix_nom)))
-    # number of time steps
-    anzahl_prozess = len(time_points) - 1
-
-    # total time interval length
-    aux_sum = 0
-    for i in range(len(time_points) - 1):
-        aux_sum += time_points[i + 1] - time_points[i]
-
-    # calculate \delta_N
-    zeit_diskret = aux_sum / (len(time_points) - 1)  # berechnen des Zeitschritts als Mittelwert aller Zeitschritte
-
-    # total mass of desired peak ist 1...
-    totm_desired = aux.flaeche(time_points, matrix_nom[params.wunschgroesse])
-
-    # mu, mu^-, mu^+
-    ret_time = aux.baue_mu_list(time_points, matrix_nom)
-    ret_time_minus = aux.baue_mu_list(time_points, matrix_min)
-    ret_time_plus = aux.baue_mu_list(time_points, matrix_max)
-
-    # some intermediate results for the variance bound
-    dict_var_nom = aux.baue_var_list(time_points, matrix_nom, ret_time)
-    dict_var_min = aux.baue_var_list(time_points, matrix_min, ret_time_minus)
-    dict_var_max = aux.baue_var_list(time_points, matrix_max, ret_time_plus)
-
-    # some intermediate results for the variance bound
-    schwankung_min = [abs(mini / nomi) for mini, nomi in zip(dict_var_min, dict_var_nom)]
-    schwankung_max = [abs(maxi / nomi) for maxi, nomi in zip(dict_var_max, dict_var_nom)]
-    schwank_var_global = max([max(schwankung_min), max(schwankung_max)])
-
-    # variance bound
-    varianz_schranke =  [schwank_var_global * nomi - muplus * muminus + zeit_diskret ** 2 / 4. for nomi, muplus, muminus in zip(dict_var_nom, ret_time_plus, ret_time_minus)]
-
-    # calculate envelopes
-    schlauch_rtd = aux.schlauch_chromatogramm(matrix_nom, matrix_min, matrix_max)
-
-    ##########################
-    # MODEL ##################
-    ##########################
+    Returns the Gurobi model and a dictionary of variable handles and objective
+    expressions. The formulation is the one of version 0.1.1; the only additions
+    are the two switches ``params.purity_rhs`` (right-hand side of Constraint
+    (32b), used for the enclosure of Corollary "enclosure") and
+    ``params.no_second_moment`` (fixes the dual variable of the relaxed second
+    moment constraint to zero).
+    """
+    time_points = inst.time_points
+    groessen = inst.groessen
+    anzahl_prozess = inst.anzahl_prozess
+    zeit_diskret = inst.zeit_diskret
+    factor = inst.factor
+    q0 = inst.q0
+    matrix_nom = inst.matrix_nom
+    ret_time_minus = inst.ret_time_minus
+    ret_time_plus = inst.ret_time_plus
+    varianz_schranke = inst.varianz_schranke
+    schlauch_rtd = inst.schlauch_rtd
+    a_s = inst.a_s
 
     m = gp.Model("chromatogram_dro")
 
@@ -151,6 +107,12 @@ def solve_dro_model(time_points, matrix_nom_roh, matrix_min_roh, matrix_max_roh,
         m.addConstr(jump_variable[params.fix_lower][0] == 1., name="jump_0_fix")
         m.addConstr(jump_variable[params.fix_upper][1] == 1., name="jump_0_fix")
 
+    # drop the relaxed second moment constraint (12)/(Eq: Sec2_second_moment_true)
+    # by fixing its dual variable to zero
+    if params.no_second_moment:
+        for i in groessen:
+            dualvariablen[i][4].ub = 0.
+
     # Constraint (32b), left-hand-side expr
     inner_exprs = []
     for i in groessen:
@@ -166,16 +128,14 @@ def solve_dro_model(time_points, matrix_nom_roh, matrix_min_roh, matrix_max_roh,
                              for i in groessen)
 
     # params.fix requires purity as objective - in all other cases, the purity is bounded from below.
-    # (32b)
-    if not params.fix: m.addConstr(reinheit_dual >= 0, "32b")
+    # (32b). The right-hand side is 0 for the safe approximation and
+    # -sum_s Delta_N^s for the upper bound of Corollary "enclosure".
+    purity_constr = None
+    if not params.fix:
+        purity_constr = m.addConstr(reinheit_dual >= params.purity_rhs, "32b")
 
-    a_s = []
-    for i in groessen:
-        if i == params.wunschgroesse:
-            a_s.append(1 - params.reinheit)
-        else:
-            a_s.append(-params.reinheit)
-
+    constr_32c = []
+    constr_32d = []
     for i in groessen:
         if i == params.wunschgroesse:
             fract_list = fract_p
@@ -183,26 +143,30 @@ def solve_dro_model(time_points, matrix_nom_roh, matrix_min_roh, matrix_max_roh,
             fract_list = fract_n
         zweimu = ret_time_plus[i] + ret_time_minus[i]
 
+        zeile_c = []
+        zeile_d = []
         for t in range(anzahl_prozess):
             # (32c)
-            m.addConstr(1/factor * (a_s[i] * q0[i] *
+            zeile_c.append(m.addConstr(1/factor * (a_s[i] * q0[i] *
                         fract_list[t]
                         - dualvariablen[i][0]
                         + dualvariablen[i][1]
                         + dualvariablen[i][2] * time_points[t]
                         - dualvariablen[i][3] * time_points[t]
                         + dualvariablen[i][4] * (time_points[t] ** 2 - zweimu * time_points[t]))
-                        + schlauchvariable[i][t] >= 0, f'32c_{i}_{t}')
+                        + schlauchvariable[i][t] >= 0, f'32c_{i}_{t}'))
         for t in range(anzahl_prozess - 1):
             # (32d)
-            m.addConstr(1/factor * (a_s[i] * q0[i] *
+            zeile_d.append(m.addConstr(1/factor * (a_s[i] * q0[i] *
                         fract_list[t]
                         - dualvariablen[i][0]
                         + dualvariablen[i][1]
                         + dualvariablen[i][2] * time_points[t+1]
                         - dualvariablen[i][3] * time_points[t+1]
                         + dualvariablen[i][4] * (time_points[t+1] ** 2 - zweimu * time_points[t+1]))
-                        + schlauchvariable[i][t] >= 0, f'32d_{i}_{t}')
+                        + schlauchvariable[i][t] >= 0, f'32d_{i}_{t}'))
+        constr_32c.append(zeile_c)
+        constr_32d.append(zeile_d)
 
     ##########################
     # OBJECTIVE ##############
@@ -211,7 +175,7 @@ def solve_dro_model(time_points, matrix_nom_roh, matrix_min_roh, matrix_max_roh,
     # lenght of fract interval
     zielfunktionMALTE = gp.quicksum(- i * jump_variable[i][0] + i * jump_variable[i][1] for i in range(anzahl_prozess + 1))
     # nominal fractionation volume
-    zielfunktionMIT = (zeit_diskret / totm_desired) * gp.quicksum(fractionierung[i] * matrix_nom[params.wunschgroesse][i] for i in range(anzahl_prozess + 1))
+    zielfunktionMIT = (zeit_diskret / inst.totm_desired) * gp.quicksum(fractionierung[i] * matrix_nom[params.wunschgroesse][i] for i in range(anzahl_prozess + 1))
     # robust fractionation volume
     zielfunktionROBUST = 1 * dualvariablen[params.wunschgroesse][0]\
                              - 1 * dualvariablen[params.wunschgroesse][1]\
@@ -222,6 +186,21 @@ def solve_dro_model(time_points, matrix_nom_roh, matrix_min_roh, matrix_max_roh,
 
     # purity
     zielfunktionEVAL = sum(inner_expr for inner_expr in inner_exprs)
+
+    if params.single_objective:
+        # only the length of the fractionation interval. Its optimal value is the
+        # same as the one of the objective hierarchy below, whose highest
+        # priority is this objective.
+        m.setObjective(zielfunktionMALTE, gp.GRB.MAXIMIZE)
+        handles = {
+            'fractionierung': fractionierung, 'fract_p': fract_p, 'fract_n': fract_n,
+            'dualvariablen': dualvariablen, 'schlauchvariable': schlauchvariable,
+            'jump_variable': jump_variable, 'inner_exprs': inner_exprs,
+            'purity_constr': purity_constr, 'constr_32c': constr_32c, 'constr_32d': constr_32d,
+            'obj_robust': zielfunktionROBUST, 'obj_nom': zielfunktionMIT,
+            'obj_interval': zielfunktionMALTE, 'obj_eval': zielfunktionEVAL,
+        }
+        return m, handles
 
     # Objective expressions. Change priority for changing optimization goals.
     m.setObjectiveN(
@@ -255,13 +234,63 @@ def solve_dro_model(time_points, matrix_nom_roh, matrix_min_roh, matrix_max_roh,
             name="obj_eval"
         )
 
+    handles = {
+        'fractionierung': fractionierung,
+        'fract_p': fract_p,
+        'fract_n': fract_n,
+        'dualvariablen': dualvariablen,
+        'schlauchvariable': schlauchvariable,
+        'jump_variable': jump_variable,
+        'inner_exprs': inner_exprs,
+        'purity_constr': purity_constr,
+        'constr_32c': constr_32c,
+        'constr_32d': constr_32d,
+        'obj_robust': zielfunktionROBUST,
+        'obj_nom': zielfunktionMIT,
+        'obj_interval': zielfunktionMALTE,
+        'obj_eval': zielfunktionEVAL,
+    }
+    return m, handles
 
-    # uncomment for advanced settings
-    m.params.FeasibilityTol = 1e-9 #default is 1e-6
+
+def set_solver_parameters(m, params: Params):
+    """Solver settings. Unchanged since version 0.1.1 except for the log file."""
+    m.params.FeasibilityTol = 1e-9  # default is 1e-6
     #m.params.ScaleFlag = 1
     m.setParam("NumericFocus", 3)  # Highest level of numerical precision
     m.setParam("IntFeasTol", 1e-9)
     m.setParam('MIPGap', 0.00)
+    if params.log_file is not None:
+        m.setParam('LogFile', params.log_file)
+    if params.time_limit is not None:
+        m.setParam('TimeLimit', params.time_limit)
+
+
+def solve_dro_model(time_points, matrix_nom_roh, matrix_min_roh, matrix_max_roh, params: Params):
+    """Build and solve the MIP, print a summary and return the result.
+
+    The returned dictionary contains, in addition to the entries of version
+    0.1.1 (``optimal_frac``, ``running_time``), the solver statistics required
+    for the model size table and the solution in terms of grid indices and
+    times.
+    """
+    # start runtime tracking
+    start = time.time()
+
+    inst = baue_instanz(time_points, matrix_nom_roh, matrix_min_roh, matrix_max_roh, params)
+    m, h = build_dro_model(inst, params)
+    set_solver_parameters(m, params)
+
+    # model statistics before solving (Gurobi counts presolve-independent sizes)
+    m.update()
+    stats = {
+        'num_vars': m.NumVars,
+        'num_bin_vars': m.NumBinVars,
+        'num_int_vars': m.NumIntVars,
+        'num_continuous_vars': m.NumVars - m.NumIntVars,
+        'num_constrs': m.NumConstrs,
+        'num_nz': m.NumNZs,
+    }
 
     # optimize
     m.optimize()
@@ -272,43 +301,134 @@ def solve_dro_model(time_points, matrix_nom_roh, matrix_min_roh, matrix_max_roh,
 
     # save end of runtime
     ende = time.time()
-    if m.status == gp.GRB.Status.OPTIMAL:
+    status = m.status
+    # a run stopped by the time limit can still have an incumbent
+    feasible = m.SolCount >= 1
+    if status == gp.GRB.Status.OPTIMAL:
         print("Feasible.")
+    elif feasible:
+        print(f"Feasible, but not solved to optimality (status {_status_name(status)}).")
     else:
         print("Infeasible.")
 
+    stats.update({
+        'status': int(status),
+        'status_name': _status_name(status),
+        'runtime': m.Runtime,
+        'work': _attr(m, 'Work'),
+        'node_count': m.NodeCount,
+        # Gurobi does not expose MIPGap for multi-objective models; the runs are
+        # terminated with MIPGap = 0, so an OPTIMAL status means gap 0.
+        'mip_gap': _attr(m, 'MIPGap') if feasible else None,
+        'obj_bound': _attr(m, 'ObjBound'),
+        'sol_count': m.SolCount,
+        'iter_count': m.IterCount,
+        'wall_time': ende - start,
+        'proven_optimal': status == gp.GRB.Status.OPTIMAL,
+    })
+    if params.single_objective and stats['obj_bound'] is not None:
+        # the objective counts grid cells; convert the bound to minutes
+        stats['length_bound'] = stats['obj_bound'] * inst.zeit_diskret
+
+    result = {
+        'stats': stats,
+        'delta_N': inst.zeit_diskret,
+        'params': {k: v for k, v in vars(params).items()},
+        'running_time': ende - start,
+    }
+
+    if not feasible:
+        result['optimal_frac'] = None
+        print('Process length: ', inst.anzahl_prozess + 1)
+        print('Runtime (seconds): ', ende - start)
+        if params.stats_file:
+            write_stats(result, params.stats_file)
+        if params.keep_model:
+            result['model'], result['handles'], result['instanz'] = m, h, inst
+        return result
+
     # save fract values
     fraktionierung_werte = []
-    for i in fractionierung:
-        fraktionierung_werte.append(int(i.x))
+    for i in h['fractionierung']:
+        fraktionierung_werte.append(int(round(i.x)))
 
     # analyze solution and determine begin and end of fractionation
-    for i in range(anzahl_prozess + 1):
-        if jump_variable[i][0].X >= 0.5:
+    begin = end = None
+    for i in range(inst.anzahl_prozess + 1):
+        if h['jump_variable'][i][0].X >= 0.5:
             begin = i
-        if jump_variable[i][1].X >= 0.5:
+        if h['jump_variable'][i][1].X >= 0.5:
             end = i
+
+    inner_exprs = h['inner_exprs']
+    a_s = inst.a_s
+    purity_num = inner_exprs[params.wunschgroesse].getValue() / a_s[params.wunschgroesse]
+    purity_den = sum(inner_exprs[i].getValue() / a_s[i] for i in inst.groessen)
 
     # some informative output
     print('Area:', aux.flaeche(time_points, matrix_nom_roh[params.wunschgroesse]))
-    print('Process length: ',len(fractionierung))
+    print('Process length: ', inst.anzahl_prozess + 1)
     print('Runtime (seconds): ', ende - start)
-    print('OBJ nominal:', zielfunktionMIT.getValue())
-    print('OBJ robust:', zielfunktionROBUST.getValue())
-    print('OBJ interval:', zielfunktionMALTE.getValue())
-    if params.fix: print('OBJ eval:', zielfunktionEVAL.getValue())
+    print('OBJ nominal:', h['obj_nom'].getValue())
+    print('OBJ robust:', h['obj_robust'].getValue())
+    print('OBJ interval:', h['obj_interval'].getValue())
+    if params.fix: print('OBJ eval:', h['obj_eval'].getValue())
     print(f"Fract interval indexes: ({begin},{end})")
     print(f"Fract interval timesteps: ({time_points[begin]},{time_points[end]})")
-    if sum(inner_exprs[i].getValue()/a_s[i] for i in groessen) >= 1e-06:
-        print(f"Worst Case Purity: {inner_exprs[params.wunschgroesse].getValue()/a_s[params.wunschgroesse]/sum(inner_exprs[i].getValue()/a_s[i] for i in groessen)}")
+    if purity_den >= 1e-06:
+        print(f"Worst Case Purity: {purity_num / purity_den}")
     else:
         print(f"Worst Case Purity: 0/0")
+    print(f"Model size: {stats['num_continuous_vars']} continuous, "
+          f"{stats['num_bin_vars']} binary, {stats['num_constrs']} constraints")
+    print(f"Solver: runtime {stats['runtime']:.2f}s, {stats['node_count']:.0f} B&B nodes, "
+          f"MIPGap {stats['mip_gap'] if stats['mip_gap'] is None else format(stats['mip_gap'], '.2e')}")
 
-    # store result
-    result = {
+    result.update({
         'optimal_frac': fraktionierung_werte,
-        'running_time': ende - start
-    }
+        'index_lower': begin,
+        'index_upper': end,
+        'x_lower': time_points[begin],
+        'x_upper': time_points[end],
+        'interval_length': time_points[end] - time_points[begin],
+        'obj_nom': h['obj_nom'].getValue(),
+        'obj_robust': h['obj_robust'].getValue(),
+        'obj_interval': h['obj_interval'].getValue(),
+        'purity_dual': (purity_num / purity_den) if purity_den >= 1e-06 else None,
+        'inner_values': [inner_exprs[i].getValue() for i in inst.groessen],
+        'a_coeff': [inst.a_coeff(i) for i in inst.groessen],
+    })
+    if params.fix:
+        result['obj_eval'] = h['obj_eval'].getValue()
+
+    if params.stats_file:
+        write_stats(result, params.stats_file)
+
+    if params.keep_model:
+        result['model'], result['handles'], result['instanz'] = m, h, inst
 
     # return result
     return result
+
+
+def _attr(m, name):
+    """Model attribute or None if it is not available (e.g. MIPGap for
+    multi-objective models)."""
+    try:
+        return getattr(m, name)
+    except AttributeError:
+        return None
+
+
+def _status_name(status):
+    for name in dir(gp.GRB.Status):
+        if not name.startswith('_') and getattr(gp.GRB.Status, name) == status:
+            return name
+    return str(status)
+
+
+def write_stats(result, path):
+    serialisable = {k: v for k, v in result.items()
+                    if k not in ('model', 'handles', 'instanz')}
+    with open(path, 'w') as f:
+        json.dump(serialisable, f, indent=2, default=float)

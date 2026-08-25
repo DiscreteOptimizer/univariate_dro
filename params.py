@@ -40,6 +40,15 @@ class Params:
     stats_file: Optional[str] = None
     # keep the model object and the variable handles in the result dictionary
     keep_model: bool = False
+    # refine the data grid by a zero-order hold: delta_N = 1e-4 / refinement_factor
+    # for the default data set. Only one of aggregation_factor and
+    # refinement_factor may differ from 1.
+    refinement_factor: int = 1
+    # if set, the moment bounds and the envelope are recomputed on the refined
+    # grid instead of being taken from the data grid. This changes the ambiguity
+    # set slightly and is only meant for quantifying that change; see
+    # instanz.baue_instanz.
+    refine_recompute: bool = False
     # use the exact envelope mass of every grid cell instead of the rectangle
     # rule delta_N * rho_bar(tau) used up to version 0.1.1; see envelope.py.
     # Only available on the native data grid (aggregation_factor = 1).

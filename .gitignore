@@ -10,6 +10,10 @@ daten/Bisect_*
 # working links into the manuscript directory, not part of the repository
 MAIN_revised.tex
 agent_instructions_computations.md
+agent_instructions_computations_2.md
+
+# IDE settings
+.idea/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -82,3 +82,47 @@ default run reproduces the results of version 0.1.1 exactly.
 ### Changed
 - The article is now under review at the *Journal of Global Optimization*;
   `README.md` and `CITATION.cff` were updated accordingly.
+
+## [Unreleased] - round 2 of the JOGO revision (proposed 0.3.0)
+
+This round adds the computations of `agent_instructions_computations_2.md`: finer
+discretisations, smooth worst-case measures and the figures of the talk. **It
+changes published numbers**: Table 4 of the manuscript, i.e. the certified
+optimality gap, becomes sharper, see the first item below. A release is therefore
+required before the revision is submitted, and it should not be labelled as a
+patch release: the output of the same command differs from that of 0.2.0.
+
+### Changed
+- `Instanz.t_bar(i)` is now the diameter of the numerical support of the envelope
+  of species `i`, i.e. of `T^s`, instead of the diameter of the whole time
+  window. The bound of Theorem "inner_convergence" is evaluated per species, as
+  the theorem states it, and becomes sharper: `sum_s kappa^s_N` at
+  `delta_N = 1e-4` drops from 7.67 to 5.09 and the certified gap from 14.4 % to
+  12.0 %. A cell counts as part of the support if its envelope mass is at least
+  `1e-12`, so at most `8e-9` of probability mass is disregarded, which changes
+  the bound by less than `1e-6`.
+- `model_2.solve_dro_model` reports the solution on the grid of the instance,
+  which differs from the grid it was called with when the grid is refined.
+
+### Added
+- Grid refinement by a zero-order hold: `hilfsfunktionen.refine_matrix_index`,
+  `refine_matrix`, `refine_vector`, the parameters `refinement_factor` and
+  `refine_recompute`, and the command line options `--refinement_factor`,
+  `--refine_recompute`. `delta_N = 1e-4 / r` for the default data set.
+  With `r = 1` the refined path reproduces the data grid instance bit-identically.
+  The moment bounds and the envelope are transferred from the data grid rather
+  than recomputed, which keeps the ambiguity set unchanged; `--refine_recompute`
+  recomputes them and exists only to quantify the difference.
+- `check_refinement.py`: verifies that the envelope masses of the refined
+  sub-cells sum to the mass of the data cell (relative deviation below `1e-15`)
+  and that `r = 1` is the identity.
+- `inner_lp.smoothest_worst_case`: two-stage selection of a worst-case measure of
+  least total variation or of least curvature among all optimal ones, with the
+  value of the adversarial problem fixed to its optimum. The vertex that the
+  simplex method returns oscillates between zero and the envelope from cell to
+  cell; that oscillation is an artefact of vertex selection.
+- `slide_plot.py`: the chromatogram figure in the colours of the talk, one
+  vector PDF per fractionation window, including the worst-case densities, plus
+  a `--from_json` path that redraws a panel from stored data without Gurobi.
+- `experiments.py r1`: the sweep over the refinement factors, writing one row at
+  a time so that a partial result survives.

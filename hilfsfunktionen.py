@@ -129,3 +129,41 @@ def remove_zeros(data):
         for index2, partsize in enumerate(dat):
             data[index1][index2] = data[index1][index2][first_index_nonzero:last_index_nonzero+1]
     return data
+
+# ----------------------------------------------------------------------------
+# Grid refinement (added in 0.2.1)
+# ----------------------------------------------------------------------------
+# The aggregation functions above can only coarsen the data grid. For the
+# convergence study of the revision the opposite direction is needed: a grid of
+# width delta_N / r. Since the envelopes are step functions on the data grid,
+# a zero-order hold, i.e. repeating every value r times, refines the grid
+# without changing the function and hence without changing the ambiguity set.
+
+# refine a time point vector by subdividing every cell into r equal parts
+def refine_matrix_index(time_points, refinement_factor):
+    if refinement_factor == 1:
+        return list(time_points)
+    new = []
+    for left, right in zip(time_points[:-1], time_points[1:]):
+        step = (right - left) / refinement_factor
+        for k in range(refinement_factor):
+            new.append(left + k * step)
+    new.append(time_points[-1])
+    return new
+
+# refine a density matrix by a zero-order hold
+def refine_matrix(matrix, refinement_factor):
+    if refinement_factor == 1:
+        return [list(row) for row in matrix]
+    new = []
+    for row in matrix:
+        new_row = []
+        for value in row[:-1]:
+            new_row.extend([value] * refinement_factor)
+        new_row.append(row[-1])
+        new.append(new_row)
+    return new
+
+# refine a single vector by a zero-order hold
+def refine_vector(vector, refinement_factor):
+    return refine_matrix([vector], refinement_factor)[0]

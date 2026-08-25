@@ -22,6 +22,11 @@ from params import Params
 # scaling factors to increase numeric stability (as in model_2 up to v0.1.1)
 FACTOR = 1e06
 Q_FACTOR = 100.
+# A cell of a normalised species envelope is considered part of its numerical
+# support if it can contain at least this much probability mass.  This is well
+# below the 1e-5 density cutoff used by aggregate_matrix (even on the finest
+# grid), and therefore only removes numerically empty tails.
+SUPPORT_CELL_MASS_TOL = 1e-12
 
 
 @dataclass
@@ -90,9 +95,20 @@ class Instanz:
         """Maximum :math:`\\rho^{max,s}` of the envelope of species ``i``."""
         return max(self.schlauch_rtd[i])
 
-    def t_bar(self) -> float:
-        """:math:`\\bar T = \\max T - \\min T`."""
-        return self.time_points[-1] - self.time_points[0]
+    def t_bar(self, i: int, cell_mass_tol: float = SUPPORT_CELL_MASS_TOL) -> float:
+        """Length of the numerical support of species ``i``.
+
+        A grid cell belongs to the support if its envelope mass
+        ``zeit_diskret * schlauch_rtd[i][j]`` is at least
+        ``cell_mass_tol``.  The returned interval reaches from the left edge of
+        the first such cell to the right edge of the last one.
+        """
+        support = [j for j in range(self.anzahl_prozess)
+                   if self.zeit_diskret * max(0., self.schlauch_rtd[i][j])
+                   >= cell_mass_tol]
+        if not support:
+            return 0.
+        return self.time_points[support[-1] + 1] - self.time_points[support[0]]
 
 
 def baue_instanz(time_points, matrix_nom_roh, matrix_min_roh, matrix_max_roh,
@@ -102,7 +118,45 @@ def baue_instanz(time_points, matrix_nom_roh, matrix_min_roh, matrix_max_roh,
     The order of operations is identical to the one used in
     ``model_2.solve_dro_model`` up to version 0.1.1, so that results do not
     change.
+
+    Grid refinement (``params.refinement_factor = r > 1``, added in 0.2.1)
+    ---------------------------------------------------------------------
+    The densities and the envelope are step functions on the data grid, and the
+    model evaluates the envelope mass of a cell by the rectangle rule, which is
+    exact for a step function. Repeating every value ``r`` times therefore
+    refines the grid to ``delta_N / r`` without changing any of the functions,
+    and hence without changing the ambiguity set.
+
+    Two quantities are not grid-indexed and would nevertheless change if they
+    were recomputed after the refinement, because the code estimates them as
+    weighted sums over grid points rather than as integrals: the moment bounds
+    ``mu_-, mu, mu_+`` (which shift by up to ``delta_N (r-1) / (2r)``) and the
+    variances derived from them. They are therefore computed on the data grid
+    and carried over unchanged, which is what keeps the ambiguity set the same.
+    Likewise the envelope is built on the data grid and then refined, since the
+    flat top of ``schlauch_chromatogramm`` ends at a grid point and rebuilding it
+    on the refined grid would shorten it by up to ``delta_N``.
+
+    The only quantity that legitimately depends on the refined grid is the
+    correction ``delta_N^2/4`` in ``varianz_schranke``, which comes from the
+    discretisation itself and is recomputed.
+
+    Setting ``params.refine_recompute`` recomputes everything on the refined grid
+    instead. That path exists only to quantify the difference; it does not keep
+    the ambiguity set fixed.
     """
+    refinement = max(1, int(getattr(params, 'refinement_factor', 1) or 1))
+    if refinement > 1:
+        assert params.aggregation_factor == 1, \
+            "refinement_factor > 1 requires aggregation_factor == 1"
+    if refinement > 1 and getattr(params, 'refine_recompute', False):
+        # naive variant: refine the inputs first, then run the normal pipeline
+        time_points = aux.refine_matrix_index(time_points, refinement)
+        matrix_nom_roh = aux.refine_matrix(matrix_nom_roh, refinement)
+        matrix_min_roh = aux.refine_matrix(matrix_min_roh, refinement)
+        matrix_max_roh = aux.refine_matrix(matrix_max_roh, refinement)
+        refinement = 1
+
     # initialize particle mass vector
     q0 = np.zeros(len(matrix_nom_roh))
     # calculate mass of particle i
@@ -164,6 +218,22 @@ def baue_instanz(time_points, matrix_nom_roh, matrix_min_roh, matrix_max_roh,
 
     # calculate envelopes
     schlauch_rtd = aux.schlauch_chromatogramm(matrix_nom, matrix_min, matrix_max)
+
+    if refinement > 1:
+        # transfer the data grid quantities to the refined grid: the densities and
+        # the envelope by a zero-order hold, the moment bounds unchanged
+        time_points = aux.refine_matrix_index(time_points, refinement)
+        matrix_nom = np.array(aux.refine_matrix(matrix_nom, refinement))
+        matrix_min = np.array(aux.refine_matrix(matrix_min, refinement))
+        matrix_max = np.array(aux.refine_matrix(matrix_max, refinement))
+        schlauch_rtd = aux.refine_matrix(schlauch_rtd, refinement)
+        anzahl_prozess = len(time_points) - 1
+        zeit_diskret = zeit_diskret / refinement
+        # only the discretisation correction depends on the refined grid
+        varianz_schranke = [schwank_var_global * nomi - muplus * muminus + zeit_diskret ** 2 / 4.
+                            for nomi, muplus, muminus
+                            in zip(dict_var_nom, ret_time_plus, ret_time_minus)]
+        totm_desired = aux.flaeche(time_points, matrix_nom[params.wunschgroesse])
 
     # optionally replace the rectangle rule for the envelope masses by the exact
     # integral over the cell (verification task V2). The model multiplies

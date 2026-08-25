@@ -253,3 +253,110 @@ def purity_from_values(inst: Instanz, values):
     desired = masses[[i for i in inst.groessen
                       if inst.a_s[i] > 0][0]]
     return desired / total
+
+
+def smoothest_worst_case(inst: Instanz, i: int, lo: int, hi: int, tol: float = 1e-9,
+                         mip_indicator: bool = True, objective: str = 'tv', env=None):
+    """Worst-case measure of least total variation (task R2 of round 2).
+
+    The adversarial linear program has many optimal solutions and the simplex
+    method returns a vertex, whose density oscillates between zero and the
+    envelope from one cell to the next. That oscillation is an artefact of vertex
+    selection. This function therefore solves the problem twice:
+
+    1. the inner LP as it stands, giving the optimal value ``v_star``;
+    2. the same LP with the original objective bounded by ``v_star + tol`` and a
+       new objective that selects the smoothest of the optimal solutions.
+
+    ``objective`` selects the smoothing criterion:
+
+    ``'tv'``
+        minimise the total variation ``sum_tau |rho_tau - rho_{tau-1}|`` of the
+        density ``rho_tau = (w^-_tau + w^+_tau) / delta_N``, with
+        ``rho_{-1} = 0``. Stays a linear program.
+    ``'curvature'``
+        minimise ``sum_tau (rho_{tau+1} - 2 rho_tau + rho_{tau-1})^2``, a convex
+        quadratic objective.
+
+    Returns a dictionary with both solutions and the diagnostics that R2 asks
+    for.
+    """
+    lp = LowerLP(inst, i, env=env)
+    if mip_indicator:
+        lp.shift_pos, lp.shift_neg = (2, 3), (1, 0)
+    v_star = lp.solve(lo, hi)
+    K, d = lp.K, lp.delta
+    cell_mass_1 = _cell_masses(lp)
+    tv_1 = _total_variation(cell_mass_1, d)
+
+    m = lp.m
+    # keep the original objective at its optimal value
+    obj_expr = gp.quicksum(lp.a * (lp.wm[j] + (lp.wp[j] if j < K - 1 else 0.))
+                           for j in lp.support_indices(lo, hi))
+    value_constr = m.addConstr(obj_expr <= v_star + tol, name='value_fixed')
+
+    mass = [lp.wm[j] + (lp.wp[j] if j < K - 1 else 0.) for j in range(K)]
+    if objective == 'tv':
+        u = m.addVars(K, lb=0., name='tv')
+        for j in range(K):
+            previous = mass[j - 1] if j > 0 else 0.
+            m.addConstr(u[j] >= (mass[j] - previous) / d, name=f'tv_pos_{j}')
+            m.addConstr(u[j] >= (previous - mass[j]) / d, name=f'tv_neg_{j}')
+        m.setObjective(gp.quicksum(u[j] for j in range(K)), gp.GRB.MINIMIZE)
+    elif objective == 'curvature':
+        expr = gp.QuadExpr()
+        for j in range(1, K - 1):
+            second = (mass[j + 1] - 2. * mass[j] + mass[j - 1]) / d
+            expr += second * second
+        m.setObjective(expr, gp.GRB.MINIMIZE)
+    else:
+        raise ValueError(f"unknown smoothing objective {objective!r}")
+
+    m.optimize()
+    if m.status != gp.GRB.Status.OPTIMAL:
+        raise RuntimeError(f"smoothing stage not solved to optimality: status {m.status}")
+
+    cell_mass_2 = _cell_masses(lp)
+    tv_2 = _total_variation(cell_mass_2, d)
+    # value of the original objective at the smoothed solution
+    v_smooth = sum(lp.a * cell_mass_2[j] for j in lp.support_indices(lo, hi))
+    cap = d * np.asarray(inst.schlauch_rtd[i][:K])
+    active = cell_mass_2 > 1e-12 * max(cap.max(), 1e-30)
+    saturated = cell_mass_2 > 0.999 * cap
+
+    m.remove(value_constr)
+    return {
+        'species_index': i,
+        'delta_N': d,
+        'objective': objective,
+        'tolerance': tol,
+        'v_star': v_star,
+        'v_smoothed': v_smooth,
+        'value_deviation': v_smooth - v_star,
+        'total_variation_vertex': tv_1,
+        'total_variation_smoothed': tv_2,
+        'total_variation_reduction': (tv_1 - tv_2) / tv_1 if tv_1 else 0.,
+        'prob_in_window': v_smooth / lp.a,
+        'n_cells_with_mass': int(active.sum()),
+        'n_cells_saturating_envelope': int((saturated & active).sum()),
+        'fraction_saturating': float((saturated & active).sum() / max(int(active.sum()), 1)),
+        'max_cell_mass': float(cell_mass_2.max()),
+        'max_envelope_cell_mass': float(cap.max()),
+        'cell_mass_vertex': cell_mass_1,
+        'cell_mass_smoothed': cell_mass_2,
+        'cap': cap,
+    }
+
+
+def _cell_masses(lp):
+    """``w^-_tau + w^+_tau`` of the current solution of ``lp``."""
+    K = lp.K
+    out = np.array([lp.wm[j].X for j in range(K)])
+    out[:K - 1] += np.array([lp.wp[j].X for j in range(K - 1)])
+    return out
+
+
+def _total_variation(cell_mass, delta):
+    """Total variation of the density ``cell_mass / delta``, with rho_{-1} = 0."""
+    rho = np.asarray(cell_mass) / delta
+    return float(np.abs(np.diff(np.concatenate(([0.], rho)))).sum())

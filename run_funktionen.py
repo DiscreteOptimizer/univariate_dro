@@ -57,6 +57,12 @@ def run(params: Params):
     # opt contains the fract vector
     opt = m2.solve_dro_model(data[0], data[1], data[2], data[3], params)
 
+    # The model refines the grid internally, so the data used for evaluating the
+    # solution has to be refined in the same way (zero-order hold).
+    if params.refinement_factor > 1 and not params.refine_recompute:
+        data = [aux.refine_matrix_index(data[0], params.refinement_factor)] + \
+               [aux.refine_matrix(m, params.refinement_factor) for m in data[1:]]
+
     if opt['optimal_frac'] is None:
         print("[INFEASIBLE] No fractionation interval exists for this instance.")
         return opt
@@ -114,6 +120,14 @@ def main():
                         help="Right-hand side of the purity constraint (32b). 0.0 (default) is "
                              "the safe approximation; pass -sum_s Delta_N^s (see error_bound.py) "
                              "to obtain the upper bound of the certified enclosure.")
+    parser.add_argument("--refinement_factor", type=int, default=1,
+                        help="Refine the data grid by a zero-order hold, i.e. "
+                             "delta_N = 1e-4 / refinement_factor for the default data set. "
+                             "Requires aggregation_factor 1.")
+    parser.add_argument("--refine_recompute", action="store_true",
+                        help="With --refinement_factor: recompute the moment bounds and the "
+                             "envelope on the refined grid instead of taking them from the data "
+                             "grid. Changes the ambiguity set slightly; for diagnostics only.")
     parser.add_argument("--exact_envelope_mass", action="store_true",
                         help="Use the exact integral of the envelope over every grid cell "
                              "instead of the rectangle rule (aggregation_factor 1 only).")
@@ -141,6 +155,8 @@ def main():
         purity_rhs=args.purity_rhs,
         no_second_moment=args.no_second_moment,
         exact_envelope_mass=args.exact_envelope_mass,
+        refinement_factor=args.refinement_factor,
+        refine_recompute=args.refine_recompute,
         log_file=args.log_file,
         stats_file=args.stats_file,
         plot=not args.no_plot,

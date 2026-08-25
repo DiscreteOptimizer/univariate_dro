@@ -7,7 +7,8 @@ For every species ``s`` the bound
                          ((2 Tbar + 1) delta_N + 5/4 delta_N^2)
                          / ((mu^s)^2 - mu_+^s mu_-^s + (2 Tbar + 1) delta_N + 5/4 delta_N^2) } )
 
-with mu^s = (mu_-^s + mu_+^s)/2 and Tbar = max T - min T bounds the difference
+with mu^s = (mu_-^s + mu_+^s)/2 and Tbar_s equal to the length of the
+numerically relevant envelope support of species s bounds the difference
 between the optimal value of the discretised inner problem and the optimal value
 of the true inner problem. Summed over ``s`` it gives the amount by which the
 right-hand side of the purity constraint (32b) has to be decreased to obtain the
@@ -26,7 +27,7 @@ from instanz import Instanz
 def delta_bound(inst: Instanz, i: int) -> Dict[str, float]:
     """Delta_N^s of species ``i`` together with its ingredients."""
     delta = inst.zeit_diskret
-    t_bar = inst.t_bar()
+    t_bar = inst.t_bar(i)
     rho_max = inst.rho_max(i)
     mu_minus = inst.ret_time_minus[i]
     mu_plus = inst.ret_time_plus[i]
@@ -97,11 +98,12 @@ def _main():
         print(f"s index {b['species_index']}: |a^s|={b['abs_a']:.6f} rho_max={b['rho_max']:.4f} "
               f"env={b['term_envelope']:.6e} mean={b['term_first_moment']:.6e} "
               f"var={b['term_second_moment']:.6e} Delta_N={b['Delta_N']:.6e}")
-    print(f"delta_N = {inst.zeit_diskret:.6g}, T_bar = {inst.t_bar():.6g}")
+    print(f"delta_N = {inst.zeit_diskret:.6g}")
     print(f"sum_s Delta_N^s = {sum(b['Delta_N'] for b in bounds):.6f}")
     if args.json:
         with open(args.json, 'w') as f:
-            json.dump({'delta_N': inst.zeit_diskret, 'T_bar': inst.t_bar(),
+            json.dump({'delta_N': inst.zeit_diskret,
+                       'T_bar': [inst.t_bar(i) for i in inst.groessen],
                        'bounds': bounds,
                        'total': sum(b['Delta_N'] for b in bounds)}, f, indent=2)
 

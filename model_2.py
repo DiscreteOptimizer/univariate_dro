@@ -278,6 +278,9 @@ def solve_dro_model(time_points, matrix_nom_roh, matrix_min_roh, matrix_max_roh,
     start = time.time()
 
     inst = baue_instanz(time_points, matrix_nom_roh, matrix_min_roh, matrix_max_roh, params)
+    # from here on the grid of the instance is authoritative: with
+    # params.refinement_factor > 1 it is finer than the one that was passed in
+    time_points = inst.time_points
     m, h = build_dro_model(inst, params)
     set_solver_parameters(m, params)
 
@@ -366,7 +369,7 @@ def solve_dro_model(time_points, matrix_nom_roh, matrix_min_roh, matrix_max_roh,
     purity_den = sum(inner_exprs[i].getValue() / a_s[i] for i in inst.groessen)
 
     # some informative output
-    print('Area:', aux.flaeche(time_points, matrix_nom_roh[params.wunschgroesse]))
+    print('Area:', inst.q0[params.wunschgroesse] / inst.q_factor)
     print('Process length: ', inst.anzahl_prozess + 1)
     print('Runtime (seconds): ', ende - start)
     print('OBJ nominal:', h['obj_nom'].getValue())

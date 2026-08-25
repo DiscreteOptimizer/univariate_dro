@@ -146,6 +146,77 @@ def task_c1(args):
               f"{r.get('x_upper', float('nan')):>9.4f} {r.get('interval_length', float('nan')):>8.4f}")
 
 
+# --------------------------------------------------------------------------- R1
+def task_r1(args):
+    """Finer discretisations: delta_N = 1e-4 / r by zero-order hold refinement.
+
+    One row per refinement factor, written after every row so that a partial
+    result survives. Each row needs two solves: the safe approximation itself
+    (with the objective hierarchy of Table "runtime") and the relaxed model whose
+    optimal value is the upper bound of Corollary "enclosure".
+    """
+    import resource
+
+    rows = []
+    payload = {'task': 'R1', 'time_limit': args.time_limit, 'rows': rows,
+               'refinement': args.refinement}
+    for r in args.refinement:
+        params = make_params(refinement_factor=r)
+        data = rf.read_data(params)
+        inst = baue_instanz(data[0], data[1], data[2], data[3], params)
+        bounds = error_bound.delta_bounds(inst)
+        total = sum(b['Delta_N'] for b in bounds)
+        print(f"\n### r = {r}: delta_N = {inst.zeit_diskret:.6g}, {inst.anzahl_prozess} cells, "
+              f"sum_s kappa^s_N = {total:.6f}", flush=True)
+
+        base = _solve(args.out, f'r1_base_r{r}', refinement_factor=r,
+                      time_limit=args.time_limit)
+        mem_base = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024. / 1024.
+        relaxed = _solve(args.out, f'r1_relaxed_r{r}', refinement_factor=r, purity_rhs=-total,
+                         single_objective=True, time_limit=args.time_limit)
+        mem = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024. / 1024.
+
+        val_n = base.get('interval_length')
+        val_up = relaxed.get('interval_length')
+        val_up_bound = relaxed['stats'].get('length_bound')
+        gap = (val_up_bound - val_n) if (val_n is not None and val_up_bound is not None) else None
+        row = {
+            'refinement_factor': r,
+            'delta_N': inst.zeit_diskret,
+            'n_cells': inst.anzahl_prozess,
+            'kappa_per_species': [b['Delta_N'] for b in bounds],
+            'T_bar_per_species': [b['T_bar'] for b in bounds],
+            'rho_max_per_species': [b['rho_max'] for b in bounds],
+            'sum_kappa': total,
+            'val_N': val_n,
+            'val_N_proven_optimal': base['stats'].get('proven_optimal'),
+            'val_N_mip_gap': base['stats'].get('mip_gap'),
+            'val_N_up_incumbent': val_up,
+            'val_N_up_dual_bound': val_up_bound,
+            'val_N_up_proven_optimal': relaxed['stats'].get('proven_optimal'),
+            'gap_absolute': gap,
+            'gap_relative': (gap / val_n) if (gap is not None and val_n) else None,
+            'max_rss_gb': mem, 'max_rss_gb_after_base': mem_base,
+            'base': _slim(base), 'relaxed': _slim(relaxed),
+        }
+        rows.append(row)
+        _dump(args.out, 'r1_refinement.json', payload)
+        print(f"    val_N = {val_n}, val_N^up in [{val_up}, {val_up_bound}], "
+              f"gap {gap}, peak RSS {mem:.2f} GB", flush=True)
+
+    print(f"\n{'delta_N':>10} {'cells':>8} {'vars':>9} {'binary':>8} {'constrs':>9} "
+          f"{'time(s)':>9} {'nodes':>7} {'val_N':>8} {'sum kappa':>10} {'val_up':>8} "
+          f"{'gap':>8} {'gap %':>7}")
+    for r in rows:
+        st = r['base']['stats']
+        print(f"{r['delta_N']:>10.6g} {r['n_cells']:>8} {st['num_vars']:>9} "
+              f"{st['num_bin_vars']:>8} {st['num_constrs']:>9} {st['runtime']:>9.1f} "
+              f"{st['node_count']:>7.0f} {r['val_N'] or float('nan'):>8.4f} "
+              f"{r['sum_kappa']:>10.4f} {r['val_N_up_dual_bound'] or float('nan'):>8.4f} "
+              f"{r['gap_absolute'] or float('nan'):>8.4f} "
+              f"{100 * (r['gap_relative'] or float('nan')):>7.1f}")
+
+
 # --------------------------------------------------------------------------- C2
 def task_c2(args):
     """Certified enclosure of Corollary "enclosure"."""
@@ -488,6 +559,12 @@ def main():
     sub = parser.add_subparsers(dest='task', required=True)
 
     sub.add_parser('c1').set_defaults(func=task_c1)
+
+    pr1 = sub.add_parser('r1')
+    pr1.add_argument('--refinement', type=int, nargs='+', default=[1, 2, 5, 10])
+    pr1.add_argument('--time_limit', type=float, default=3600.,
+                     help="Time limit in seconds per solve. Default 3600.")
+    pr1.set_defaults(func=task_r1)
 
     p2 = sub.add_parser('c2')
     p2.add_argument('--time_limit', type=float, default=900.,

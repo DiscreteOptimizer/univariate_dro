@@ -92,6 +92,12 @@ numbers**: the certified optimality gap of the manuscript becomes sharper, see t
 first item below. It is a minor and not a patch release for exactly that reason,
 the output of the same command differs from that of 0.2.0.
 
+The revision of the manuscript uses this version: the table of lower and upper
+bounds is recomputed with the per-species diameter, and the rows for
+`delta_N = 5e-5, 2e-5, 1e-5`, which need the refinement added here, are part of
+it. Version 0.2.0 therefore reproduces the submitted version of the manuscript,
+and this one the revision.
+
 ### Changed
 - `Instanz.t_bar(i)` is now the diameter of the numerical support of the envelope
   of species `i`, i.e. of `T^s`, instead of the diameter of the whole time

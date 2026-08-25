@@ -59,6 +59,8 @@ The most important further options of `run_funktionen.py` are
 | `--purity_rhs <r>` | right-hand side of the purity constraint (32b). `0.0` is the safe approximation; `-sum_s Delta_N^s` gives the upper bound of the certified enclosure, see `error_bound.py` |
 | `--no_second_moment` | drop the relaxed second-moment constraint by fixing its dual variable to zero |
 | `--exact_envelope_mass` | integrate the envelope over each grid cell exactly instead of using the rectangle rule, see `envelope.py` |
+| `--refinement_factor <r>` | refine the time grid by a zero-order hold, i.e. `delta_N = 1e-4 / r` for the default data set. Requires `--aggregation_factor 1` |
+| `--refine_recompute` | with the above: recompute the moment bounds and the envelope on the refined grid instead of taking them from the data grid. Changes the ambiguity set slightly; for diagnostics only |
 | `--stats_file <path>` | write model size, solver statistics and the solution as JSON |
 | `--log_file <path>` | write the Gurobi log to a file |
 | `--no_plot` | do not produce the matplotlib figure |
@@ -83,6 +85,8 @@ The most important further options of `run_funktionen.py` are
 | `envelope.py` | exact envelope masses per grid cell (comparison with the rectangle rule) |
 | `generate_data.py` | regeneration of the residence time distributions for other values of `eps_ACN` |
 | `experiments.py` | driver that produces all reported numbers and writes them as JSON |
+| `check_refinement.py` | consistency checks of the grid refinement |
+| `slide_plot.py` | chromatogram figure with the worst-case densities, one vector PDF per fractionation window |
 
 ---
 
@@ -110,6 +114,14 @@ python3.12 experiments.py --out results v2 --resolve
 # evaluation of given fractionation intervals
 python3.12 experiments.py --out results eval \
     --intervals "safe_approximation:3.2009:3.3813" "nominal:3.1198:3.4760"
+
+# finer discretisations: delta_N = 1e-4 / r
+python3.12 check_refinement.py --refinement 2 5 10 --json results/r1_checks.json
+python3.12 experiments.py --out results r1 --refinement 1 2 5 10 --time_limit 2400
+
+# worst-case densities of least curvature, one panel per window
+python3.12 slide_plot.py --window robust:3.2009:3.3813 --objective curvature \
+    --out results/robust.pdf --json results/worst_case_robust.json
 
 # reference solution by enumeration
 python3.12 reference.py --json results/reference.json

@@ -83,14 +83,14 @@ default run reproduces the results of version 0.1.1 exactly.
 - The article is now under review at the *Journal of Global Optimization*;
   `README.md` and `CITATION.cff` were updated accordingly.
 
-## [Unreleased] - round 2 of the JOGO revision (proposed 0.3.0)
+## [0.3.0] - 2026-08-25
 
-This round adds the computations of `agent_instructions_computations_2.md`: finer
-discretisations, smooth worst-case measures and the figures of the talk. **It
-changes published numbers**: Table 4 of the manuscript, i.e. the certified
-optimality gap, becomes sharper, see the first item below. A release is therefore
-required before the revision is submitted, and it should not be labelled as a
-patch release: the output of the same command differs from that of 0.2.0.
+Round 2 of the JOGO revision: the computations of
+`agent_instructions_computations_2.md`, i.e. finer discretisations, smooth
+worst-case measures and the figures of the talk. **This release changes published
+numbers**: the certified optimality gap of the manuscript becomes sharper, see the
+first item below. It is a minor and not a patch release for exactly that reason,
+the output of the same command differs from that of 0.2.0.
 
 ### Changed
 - `Instanz.t_bar(i)` is now the diameter of the numerical support of the envelope
@@ -99,8 +99,11 @@ patch release: the output of the same command differs from that of 0.2.0.
   the theorem states it, and becomes sharper: `sum_s kappa^s_N` at
   `delta_N = 1e-4` drops from 7.67 to 5.09 and the certified gap from 14.4 % to
   12.0 %. A cell counts as part of the support if its envelope mass is at least
-  `1e-12`, so at most `8e-9` of probability mass is disregarded, which changes
-  the bound by less than `1e-6`.
+  `1e-12`. On the shipped data that threshold drops nothing, since
+  `aggregate_matrix` sets densities below `1e-5` to exactly zero; the support, and
+  with it `T_bar_s`, is identical on all refinements of the grid. For data without
+  such a cutoff the threshold would disregard at most `8e-9` of probability mass,
+  i.e. change the bound by less than `1e-6`.
 - `model_2.solve_dro_model` reports the solution on the grid of the instance,
   which differs from the grid it was called with when the grid is refined.
 

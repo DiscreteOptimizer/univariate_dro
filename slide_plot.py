@@ -49,9 +49,30 @@ BLUE = '#002F6C'
 WINDOW_ALPHA = 0.14
 WORST_CASE_ALPHA = 0.55
 
+# Two palettes. 'talk' is the FAU Nat palette prescribed for the slides: green is
+# the decision, red what is to be collected, grey what is not wanted, blue the
+# adversary. 'paper' follows the colour language the manuscript already uses in
+# Figure "chromatograms_uncertainty" and describes in the text: the fractionation
+# interval is blue, the desired species red, the contaminants grey and their
+# envelopes black. There the worst case is not distinguished by hue but by being
+# a filled area, which survives a greyscale print.
+PALETTES = {
+    'talk': {'window': NAT_GREEN, 'window_edge': NAT_DARK_GREEN,
+             'desired': RED, 'desired_worst': RED,
+             'contaminant': GREY, 'contaminant_envelope': DARK,
+             'contaminant_worst': BLUE, 'axes': DARK,
+             'window_alpha': WINDOW_ALPHA, 'worst_alpha': WORST_CASE_ALPHA},
+    'paper': {'window': '#3B6EA5', 'window_edge': '#27496D',
+              'desired': RED, 'desired_worst': RED,
+              'contaminant': '#8C8C8C', 'contaminant_envelope': '#1A1A1A',
+              'contaminant_worst': '#4D4D4D', 'axes': '#1A1A1A',
+              'window_alpha': 0.18, 'worst_alpha': 0.45},
+}
 
-def _style(font_pt=9.5):
-    """Font sizes for a panel shown at about 14 cm width."""
+
+def _style(font_pt=9.5, palette='talk'):
+    """Font sizes and colours for a panel shown at its authored width."""
+    axes_colour = PALETTES[palette]['axes']
     plt.rcParams.update({
         'font.size': font_pt,
         'axes.labelsize': font_pt,
@@ -59,11 +80,11 @@ def _style(font_pt=9.5):
         'xtick.labelsize': font_pt - 0.5,
         'ytick.labelsize': font_pt - 0.5,
         'legend.fontsize': font_pt - 1.5,
-        'axes.edgecolor': DARK,
-        'axes.labelcolor': DARK,
-        'xtick.color': DARK,
-        'ytick.color': DARK,
-        'text.color': DARK,
+        'axes.edgecolor': axes_colour,
+        'axes.labelcolor': axes_colour,
+        'xtick.color': axes_colour,
+        'ytick.color': axes_colour,
+        'text.color': axes_colour,
         'pdf.fonttype': 42,
         'savefig.transparent': True,
     })
@@ -78,9 +99,10 @@ def compute(inst, lo, hi, tol=1e-9, objective='tv', mip_indicator=True):
 
 def panel(inst, measures, lo, hi, path, desired, xlim=None, ylim=None,
           show_contaminant_envelopes=True, width_cm=14., height_cm=8.4, font_pt=9.5,
-          smoothed=True, legend=True):
+          smoothed=True, legend=True, palette='talk'):
     """Write one panel."""
-    _style(font_pt)
+    _style(font_pt, palette)
+    c = PALETTES[palette]
     t = np.asarray(inst.time_points)
     K = inst.anzahl_prozess
     d = inst.zeit_diskret
@@ -90,9 +112,9 @@ def panel(inst, measures, lo, hi, path, desired, xlim=None, ylim=None,
     fig, ax = plt.subplots(figsize=(width_cm / 2.54, height_cm / 2.54))
 
     # fractionation window
-    ax.axvspan(t[lo], t[hi], facecolor=NAT_GREEN, alpha=WINDOW_ALPHA, lw=0., zorder=0)
+    ax.axvspan(t[lo], t[hi], facecolor=c['window'], alpha=c['window_alpha'], lw=0., zorder=0)
     for x in (t[lo], t[hi]):
-        ax.axvline(x, color=NAT_DARK_GREEN, lw=1.0, zorder=1)
+        ax.axvline(x, color=c['window_edge'], lw=1.0, zorder=1)
 
     key = 'cell_mass_smoothed' if smoothed else 'cell_mass_vertex'
     for i in inst.groessen:
@@ -102,18 +124,17 @@ def panel(inst, measures, lo, hi, path, desired, xlim=None, ylim=None,
         worst = np.asarray(measures[i][key]) / d * scale[i]
 
         # worst case, filled to zero
-        ax.fill_between(t[:K], 0., worst, step='post',
-                        color=RED if is_desired else BLUE,
-                        alpha=WORST_CASE_ALPHA, lw=0., zorder=2)
-        ax.plot(t[:K], worst, drawstyle='steps-post',
-                color=RED if is_desired else BLUE, lw=0.7,
-                alpha=WORST_CASE_ALPHA, zorder=3)
+        colour = c['desired_worst'] if is_desired else c['contaminant_worst']
+        ax.fill_between(t[:K], 0., worst, step='post', color=colour,
+                        alpha=c['worst_alpha'], lw=0., zorder=2)
+        ax.plot(t[:K], worst, drawstyle='steps-post', color=colour, lw=0.7,
+                alpha=c['worst_alpha'], zorder=3)
         # envelope
         if is_desired or show_contaminant_envelopes:
-            ax.plot(t, envelope, color=RED if is_desired else DARK, lw=0.8,
-                    ls=(0, (4, 2)), zorder=4)
+            ax.plot(t, envelope, color=c['desired'] if is_desired else c['contaminant_envelope'],
+                    lw=0.8, ls=(0, (4, 2)), zorder=4)
         # nominal density
-        ax.plot(t, nominal, color=RED if is_desired else GREY,
+        ax.plot(t, nominal, color=c['desired'] if is_desired else c['contaminant'],
                 lw=1.6 if is_desired else 0.9, zorder=5)
 
     ax.set_xlabel('Time in min')
@@ -134,58 +155,64 @@ def panel(inst, measures, lo, hi, path, desired, xlim=None, ylim=None,
     print(f"written: {path}")
 
 
-def _legend(ax, show_contaminant_envelopes):
+def _legend(ax, show_contaminant_envelopes, palette='talk'):
+    """Legend of one panel, in the colours of ``palette``."""
+    c = PALETTES[palette]
     handles = [
-            Patch(facecolor=NAT_GREEN, alpha=WINDOW_ALPHA, edgecolor=NAT_DARK_GREEN,
-                  label='fractionation window'),
-            Line2D([0], [0], color=RED, lw=1.6, label='desired, nominal'),
-            Line2D([0], [0], color=RED, lw=0.8, ls=(0, (4, 2)), label='desired, envelope'),
-            Patch(facecolor=RED, alpha=WORST_CASE_ALPHA, label='desired, worst case'),
-        Line2D([0], [0], color=GREY, lw=0.9, label='contaminants, nominal'),
+        Patch(facecolor=c['window'], alpha=c['window_alpha'], edgecolor=c['window_edge'],
+              label='fractionation window'),
+        Line2D([0], [0], color=c['desired'], lw=1.6, label='desired, nominal'),
+        Line2D([0], [0], color=c['desired'], lw=0.8, ls=(0, (4, 2)),
+               label='desired, envelope'),
+        Patch(facecolor=c['desired_worst'], alpha=c['worst_alpha'],
+              label='desired, worst case'),
+        Line2D([0], [0], color=c['contaminant'], lw=0.9, label='contaminants, nominal'),
     ]
     if show_contaminant_envelopes:
-        handles.append(Line2D([0], [0], color=DARK, lw=0.8, ls=(0, (4, 2)),
-                              label='contaminants, envelope'))
-    handles.append(Patch(facecolor=BLUE, alpha=WORST_CASE_ALPHA,
+        handles.append(Line2D([0], [0], color=c['contaminant_envelope'], lw=0.8,
+                              ls=(0, (4, 2)), label='contaminants, envelope'))
+    handles.append(Patch(facecolor=c['contaminant_worst'], alpha=c['worst_alpha'],
                          label='contaminants, worst case'))
-    ax.legend(handles=handles, loc='upper right', frameon=True, framealpha=0.95,
-              edgecolor=DARK, fancybox=False, borderpad=0.5, handlelength=1.6,
-              labelspacing=0.35).get_frame().set_linewidth(0.6)
+    legend = ax.legend(handles=handles, loc='upper right', frameon=True, framealpha=0.95,
+                       edgecolor=c['axes'], fancybox=False, borderpad=0.5,
+                       handlelength=1.6, labelspacing=0.35)
+    legend.get_frame().set_linewidth(0.6)
 
 
 def panel_from_json(payload, path, xlim=None, ylim=None, desired=2,
                     show_contaminant_envelopes=True, width_cm=14., height_cm=8.4,
-                    font_pt=9.5, smoothed=True, legend=True):
+                    font_pt=9.5, smoothed=True, legend=True, palette='talk'):
     """Re-draw a panel from the JSON written by a previous run, without Gurobi.
 
     Useful for changing sizes, fonts or limits without re-solving the linear
     programs; all curves are stored in the JSON in pA.
     """
-    _style(font_pt)
+    _style(font_pt, palette)
+    c = PALETTES[palette]
     t = np.asarray(payload['time_points'])
     d = payload['delta_N']
     lo, hi = payload['index_lower'], payload['index_upper']
     key = 'worst_case_pA' if smoothed else 'worst_case_vertex_pA'
 
     fig, ax = plt.subplots(figsize=(width_cm / 2.54, height_cm / 2.54))
-    ax.axvspan(t[lo], t[hi], facecolor=NAT_GREEN, alpha=WINDOW_ALPHA, lw=0., zorder=0)
+    ax.axvspan(t[lo], t[hi], facecolor=c['window'], alpha=c['window_alpha'], lw=0., zorder=0)
     for x in (t[lo], t[hi]):
-        ax.axvline(x, color=NAT_DARK_GREEN, lw=1.0, zorder=1)
+        ax.axvline(x, color=c['window_edge'], lw=1.0, zorder=1)
 
     for i, (nominal, envelope, worst) in enumerate(zip(payload['nominal_pA'],
                                                        payload['envelope_pA'],
                                                        payload[key])):
         is_desired = (i == desired)
         worst = np.asarray(worst)
-        ax.fill_between(t[:len(worst)], 0., worst, step='post',
-                        color=RED if is_desired else BLUE, alpha=WORST_CASE_ALPHA,
-                        lw=0., zorder=2)
-        ax.plot(t[:len(worst)], worst, drawstyle='steps-post',
-                color=RED if is_desired else BLUE, lw=0.7, alpha=WORST_CASE_ALPHA, zorder=3)
+        colour = c['desired_worst'] if is_desired else c['contaminant_worst']
+        ax.fill_between(t[:len(worst)], 0., worst, step='post', color=colour,
+                        alpha=c['worst_alpha'], lw=0., zorder=2)
+        ax.plot(t[:len(worst)], worst, drawstyle='steps-post', color=colour, lw=0.7,
+                alpha=c['worst_alpha'], zorder=3)
         if is_desired or show_contaminant_envelopes:
-            ax.plot(t, envelope, color=RED if is_desired else DARK, lw=0.8,
-                    ls=(0, (4, 2)), zorder=4)
-        ax.plot(t, nominal, color=RED if is_desired else GREY,
+            ax.plot(t, envelope, color=c['desired'] if is_desired else c['contaminant_envelope'],
+                    lw=0.8, ls=(0, (4, 2)), zorder=4)
+        ax.plot(t, nominal, color=c['desired'] if is_desired else c['contaminant'],
                 lw=1.6 if is_desired else 0.9, zorder=5)
 
     ax.set_xlabel('Time in min')
@@ -196,7 +223,7 @@ def panel_from_json(payload, path, xlim=None, ylim=None, desired=2,
     for side in ('top', 'right'):
         ax.spines[side].set_visible(False)
     if legend:
-        _legend(ax, show_contaminant_envelopes)
+        _legend(ax, show_contaminant_envelopes, palette)
     fig.tight_layout(pad=0.3)
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     fig.savefig(path)
@@ -227,6 +254,10 @@ def main():
     parser.add_argument('--height_cm', type=float, default=8.4)
     parser.add_argument('--font_pt', type=float, default=9.5)
     parser.add_argument('--no_legend', action='store_true')
+    parser.add_argument('--palette', default='talk', choices=tuple(PALETTES),
+                        help="'talk' is the FAU Nat palette of the slides, 'paper' the colour "
+                             "language of Figure \"chromatograms_uncertainty\" of the "
+                             "manuscript.")
     args = parser.parse_args()
 
     if args.from_json:
@@ -238,7 +269,7 @@ def main():
                         show_contaminant_envelopes=not args.no_contaminant_envelopes,
                         width_cm=args.width_cm, height_cm=args.height_cm,
                         font_pt=args.font_pt, smoothed=not args.vertex,
-                        legend=not args.no_legend)
+                        legend=not args.no_legend, palette=args.palette)
         return
 
     if not args.window:
@@ -270,7 +301,7 @@ def main():
           xlim=args.xlim, ylim=args.ylim,
           show_contaminant_envelopes=not args.no_contaminant_envelopes,
           width_cm=args.width_cm, height_cm=args.height_cm, font_pt=args.font_pt,
-          smoothed=not args.vertex, legend=not args.no_legend)
+          smoothed=not args.vertex, legend=not args.no_legend, palette=args.palette)
 
     if args.json:
         payload = {

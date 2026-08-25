@@ -10,8 +10,8 @@ authors:
     given-names: Jan
   - family-names: Rösel
     given-names: Florian
-date-released: 2026-08-17
-version: 0.2.0
+date-released: 2026-08-25
+version: 0.3.0
 license: MIT
 repository-code: "https://github.com/DiscreteOptimizer/univariate_dro"
 preferred-citation:

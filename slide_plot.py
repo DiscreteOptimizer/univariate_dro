@@ -99,7 +99,8 @@ def compute(inst, lo, hi, tol=1e-9, objective='tv', mip_indicator=True):
 
 def panel(inst, measures, lo, hi, path, desired, xlim=None, ylim=None,
           show_contaminant_envelopes=True, width_cm=14., height_cm=8.4, font_pt=9.5,
-          smoothed=True, legend=True, palette='talk'):
+          smoothed=True, legend=True, palette='talk', legend_loc='upper right',
+          legend_ncol=1):
     """Write one panel."""
     _style(font_pt, palette)
     c = PALETTES[palette]
@@ -146,7 +147,7 @@ def panel(inst, measures, lo, hi, path, desired, xlim=None, ylim=None,
         ax.spines[side].set_visible(False)
 
     if legend:
-        _legend(ax, show_contaminant_envelopes)
+        _legend(ax, show_contaminant_envelopes, palette, legend_loc, legend_ncol)
 
     fig.tight_layout(pad=0.3)
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
@@ -155,7 +156,7 @@ def panel(inst, measures, lo, hi, path, desired, xlim=None, ylim=None,
     print(f"written: {path}")
 
 
-def _legend(ax, show_contaminant_envelopes, palette='talk'):
+def _legend(ax, show_contaminant_envelopes, palette='talk', loc='upper right', ncol=1):
     """Legend of one panel, in the colours of ``palette``."""
     c = PALETTES[palette]
     handles = [
@@ -173,15 +174,23 @@ def _legend(ax, show_contaminant_envelopes, palette='talk'):
                               ls=(0, (4, 2)), label='contaminants, envelope'))
     handles.append(Patch(facecolor=c['contaminant_worst'], alpha=c['worst_alpha'],
                          label='contaminants, worst case'))
-    legend = ax.legend(handles=handles, loc='upper right', frameon=True, framealpha=0.95,
-                       edgecolor=c['axes'], fancybox=False, borderpad=0.5,
-                       handlelength=1.6, labelspacing=0.35)
+    kwargs = dict(handles=handles, frameon=True, framealpha=0.95,
+                  edgecolor=c['axes'], fancybox=False, borderpad=0.5,
+                  handlelength=1.6, labelspacing=0.35, ncol=ncol)
+    if loc == 'below':
+        # outside the axes, so that nothing is covered
+        kwargs.update(loc='upper center', bbox_to_anchor=(0.5, -0.28),
+                      borderaxespad=0.)
+    else:
+        kwargs.update(loc=loc)
+    legend = ax.legend(**kwargs)
     legend.get_frame().set_linewidth(0.6)
 
 
 def panel_from_json(payload, path, xlim=None, ylim=None, desired=2,
                     show_contaminant_envelopes=True, width_cm=14., height_cm=8.4,
-                    font_pt=9.5, smoothed=True, legend=True, palette='talk'):
+                    font_pt=9.5, smoothed=True, legend=True, palette='talk',
+                    legend_loc='upper right', legend_ncol=1):
     """Re-draw a panel from the JSON written by a previous run, without Gurobi.
 
     Useful for changing sizes, fonts or limits without re-solving the linear
@@ -223,7 +232,7 @@ def panel_from_json(payload, path, xlim=None, ylim=None, desired=2,
     for side in ('top', 'right'):
         ax.spines[side].set_visible(False)
     if legend:
-        _legend(ax, show_contaminant_envelopes, palette)
+        _legend(ax, show_contaminant_envelopes, palette, legend_loc, legend_ncol)
     fig.tight_layout(pad=0.3)
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     fig.savefig(path)
@@ -235,6 +244,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('--sample', default='long')
     parser.add_argument('--aggregation_factor', type=int, default=1)
+    parser.add_argument('--refinement_factor', type=int, default=1,
+                        help="Zero-order-hold refinement of the data grid, "
+                             "delta_N = 1e-4 / refinement_factor. Only one of "
+                             "aggregation_factor and refinement_factor may differ from 1.")
     parser.add_argument('--reinheit', type=float, default=.95)
     parser.add_argument('--wunschgroesse', type=int, default=2)
     parser.add_argument('--from_json', default=None,
@@ -254,6 +267,10 @@ def main():
     parser.add_argument('--height_cm', type=float, default=8.4)
     parser.add_argument('--font_pt', type=float, default=9.5)
     parser.add_argument('--no_legend', action='store_true')
+    parser.add_argument('--legend_loc', default='upper right',
+                        help="A matplotlib location, or 'below' to place the legend "
+                             "outside the axes so that it covers nothing.")
+    parser.add_argument('--legend_ncol', type=int, default=1)
     parser.add_argument('--palette', default='talk', choices=tuple(PALETTES),
                         help="'talk' is the FAU Nat palette of the slides, 'paper' the colour "
                              "language of Figure \"chromatograms_uncertainty\" of the "
@@ -269,13 +286,15 @@ def main():
                         show_contaminant_envelopes=not args.no_contaminant_envelopes,
                         width_cm=args.width_cm, height_cm=args.height_cm,
                         font_pt=args.font_pt, smoothed=not args.vertex,
-                        legend=not args.no_legend, palette=args.palette)
+                        legend=not args.no_legend, palette=args.palette,
+                        legend_loc=args.legend_loc, legend_ncol=args.legend_ncol)
         return
 
     if not args.window:
         parser.error("either --window or --from_json is required")
     name, xl, xu = args.window.split(':')
-    params = Params(aggregation_factor=args.aggregation_factor, reinheit=args.reinheit,
+    params = Params(aggregation_factor=args.aggregation_factor,
+                    refinement_factor=args.refinement_factor, reinheit=args.reinheit,
                     wunschgroesse=args.wunschgroesse, sample=args.sample, fix=False,
                     fix_lower=0, fix_upper=0, nominal=False, plot=False)
     data = rf.read_data(params)
@@ -301,7 +320,8 @@ def main():
           xlim=args.xlim, ylim=args.ylim,
           show_contaminant_envelopes=not args.no_contaminant_envelopes,
           width_cm=args.width_cm, height_cm=args.height_cm, font_pt=args.font_pt,
-          smoothed=not args.vertex, legend=not args.no_legend, palette=args.palette)
+          smoothed=not args.vertex, legend=not args.no_legend, palette=args.palette,
+          legend_loc=args.legend_loc, legend_ncol=args.legend_ncol)
 
     if args.json:
         payload = {
